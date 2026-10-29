@@ -1,0 +1,123 @@
+name: cask release
+
+run-name: >-
+  ${{ github.event.client_payload.cask || inputs.cask }}
+  ${{ github.event.client_payload.version || inputs.version }}
+
+on:
+  repository_dispatch:
+    types:
+      - cask-release
+  workflow_dispatch:
+    inputs:
+      cask:
+        description: Cask token, such as subtrack
+        required: true
+        type: string
+      version:
+        description: Released version, as it appears in the release tag
+        required: true
+        type: string
+
+permissions: {}
+
+# Pushes to main one at a time, so two apps releasing together don't race.
+concurrency:
+  group: cask-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  bump:
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      CASK: ${{ github.event.client_payload.cask || inputs.cask }}
+      VERSION: ${{ github.event.client_payload.version || inputs.version }}
+    steps:
+      - name: Validate request
+        run: |
+          if [[ ! "$CASK" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "::error::Invalid cask token: '$CASK'"
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.,_+-]*$ ]]; then
+            echo "::error::Invalid version: '$VERSION'"
+            exit 1
+          fi
+
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f  # 2026.09.07.1
+
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: macos-26-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: macos-26-rubygems-
+
+      - name: Set up git
+        uses: Homebrew/actions/git-user-config@f8d4222eb633e65c2a0157383cf80861fc7fae7f  # 2026.09.07.1
+        with:
+          username: github-actions[bot]
+
+      - run: brew test-bot --only-cleanup-before
+
+      - run: brew test-bot --only-setup
+
+      - name: Bump cask
+        id: bump
+        env:
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+        run: |
+          if [[ ! -f "Casks/$CASK.rb" ]]; then
+            echo "::error::This tap has no $CASK cask."
+            exit 1
+          fi
+          cask_ref="$TAP_NAME/$CASK"
+          echo "cask-ref=$cask_ref" >> "$GITHUB_OUTPUT"
+
+          current="$(brew info --cask --json=v2 "$cask_ref" | jq --raw-output '.casks[0].version')"
+          if [[ "$current" == "$VERSION" ]]; then
+            echo "::notice::$CASK is already at $VERSION."
+          else
+            brew bump-cask-pr --write-only --commit --no-audit --no-style \
+              --version="$VERSION" "$cask_ref"
+          fi
+
+      - name: Verify checksum
+        run: brew fetch --cask "$CASK_REF"
+        env:
+          CASK_REF: ${{ steps.bump.outputs.cask-ref }}
+
+      - name: Audit cask
+        run: brew audit --cask --strict --online "$CASK_REF"
+        env:
+          CASK_REF: ${{ steps.bump.outputs.cask-ref }}
+
+      - run: brew test-bot --only-tap-syntax
+
+      - name: Push to main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
+            echo "::notice::Nothing to push."
+            exit 0
+          fi
+
+          remote="https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          for attempt in 1 2 3; do
+            if git push "$remote" HEAD:refs/heads/main; then
+              exit 0
+            fi
+            sleep $((attempt * 10))
+            git pull --rebase "$remote" main
+          done
+          exit 1
