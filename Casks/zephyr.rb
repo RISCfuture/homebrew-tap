@@ -13,7 +13,7 @@ cask "zephyr" do
   end
 
   auto_updates true
-  depends_on macos: :tahoe
+  depends_on macos: :golden_gate
 
   # Installed as a package rather than by copying the app out of it. The Finder
   # stamps com.apple.quarantine onto anything dragged from a disk image, macOS
