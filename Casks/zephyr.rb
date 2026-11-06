@@ -1,6 +1,6 @@
 cask "zephyr" do
   version "2.0.1"
-  sha256 "bea8d8ed94bbae046166963662d7409648a643e6574878ca10a0e9f08dfedf74"
+  sha256 "7f3942c7e36ee9a33e9e14f3b4b2e930e57888e4d01994e152492f8ff503d287"
 
   url "https://github.com/RISCfuture/Zephyr/releases/download/#{version}/Zephyr-#{version}.pkg"
   name "Zephyr"
