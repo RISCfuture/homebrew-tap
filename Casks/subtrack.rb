@@ -1,6 +1,6 @@
 cask "subtrack" do
-  version "2.0"
-  sha256 "5f8622059826ac044e29b29819d32cd1ebaf13317f8a0b0d5f7110ec6fd32a6c"
+  version "2.0.1"
+  sha256 "5ea60ec5b0b6e9c648382205710cbf12166536100dc65e32d711c81179e79294"
 
   url "https://github.com/RISCfuture/SubTrack/releases/download/#{version}/SubTrack-#{version}.dmg"
   name "SubTrack"
